@@ -32,8 +32,8 @@ def get_document_text_chunks(loader):
 
     # Get the text chunks of the PDF file, accumulate to the text_chunks list variable becaus load_and_split() returns a list of Document
     docs = loader.load_and_split(text_splitter=RecursiveCharacterTextSplitter(
-        chunk_size = 1000,
-        chunk_overlap = 150,
+        chunk_size = 900,
+        chunk_overlap = 120,
         length_function = len,
         separators= ["\n\n", "\n", ".", " "]
     ))
@@ -243,4 +243,3 @@ if __name__ == '__main__':
     else:
         sys.argv = ["streamlit", "run", sys.argv[0]]
         sys.exit(stcli.main())
-
