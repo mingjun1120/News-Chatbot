@@ -3,7 +3,7 @@ langchain-google-genai==0.0.5
 ipykernel==6.27.1
 langchain==0.0.352
 python-dotenv==1.0.0
-python-magic-bin==0.4.14
+-e git://github.com/julian-r/python-magic.git#egg=python-magic-bin
 python-magic==0.4.27
 sentence-transformers==2.2.2
 streamlit-extras==0.3.6
