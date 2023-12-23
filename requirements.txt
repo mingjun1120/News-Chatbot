@@ -1,0 +1,11 @@
+faiss-cpu
+langchain-google-genai
+ipykernel
+langchain
+python-dotenv
+python-magic
+python-magic-bin
+sentence-transformers
+streamlit-extras
+streamlit
+unstructured
