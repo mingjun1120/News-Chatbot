@@ -3,8 +3,8 @@ langchain-google-genai
 ipykernel
 langchain
 python-dotenv
-python-magic
 python-magic-bin
+python-magic
 sentence-transformers
 streamlit-extras
 streamlit
