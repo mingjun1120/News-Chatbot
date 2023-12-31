@@ -86,7 +86,8 @@ def reset_session_state():
 # ------------------------------------------------------ GLOBAL VARIABLES ------------------------------------------------------ #
 # Load the environment variables
 load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY")
+# api_key = os.getenv("GOOGLE_API_KEY")
+api_key = st.secrets["GOOGLE_API_KEY"]
 
 # Set the tab's title, icon and CSS style
 page_icon = ":newspaper:"  # https://www.webfx.com/tools/emoji-cheat-sheet/
