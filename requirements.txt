@@ -1,7 +1,7 @@
 faiss-cpu==1.7.4
 langchain-google-genai==0.0.5
 ipykernel==6.27.1
-langchain==0.0.352
+langchain==0.0.353
 python-dotenv==1.0.0
 python-magic==0.4.27
 python-magic-bin==0.4.14
