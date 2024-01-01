@@ -164,9 +164,9 @@ def main():
         # Reset button part
         reset = st.button('Reset All', on_click=reset_session_state)
         if reset:
-        #     for key in st.session_state.keys():
-        #         del st.session_state[key]
-        #     initialize_session_state()
+            # for key in st.session_state.keys():
+            #     del st.session_state[key]
+            # initialize_session_state()
             st.rerun()
     
     # ------------------------------------------------------ MAIN LAYOUT------------------------------------------------------ #
