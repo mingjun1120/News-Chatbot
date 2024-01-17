@@ -5,10 +5,13 @@ from streamlit_extras.colored_header import colored_header
 from streamlit_extras.add_vertical_space import add_vertical_space
 
 # Langchain Imports
-from langchain.document_loaders import UnstructuredURLLoader
+from langchain_community.document_loaders import UnstructuredURLLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAI, GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain.vectorstores import FAISS
+from langchain_openai import AzureChatOpenAI, AzureOpenAI, AzureOpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain.chains.conversational_retrieval.prompts import (CONDENSE_QUESTION_PROMPT, QA_PROMPT)
 from langchain.chains import ConversationalRetrievalChain, RetrievalQAWithSourcesChain
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
@@ -26,30 +29,48 @@ import pickle
 import random
 import time
 
-
 # ------------------------------------------------------ FUNCTIONS ------------------------------------------------------ #
 def get_document_text_chunks(loader):
 
     # Get the text chunks of the PDF file, accumulate to the text_chunks list variable becaus load_and_split() returns a list of Document
     docs = loader.load_and_split(text_splitter=RecursiveCharacterTextSplitter(
-        chunk_size = 900,
-        chunk_overlap = 120,
+        chunk_size = 750,
+        chunk_overlap = 80,
         length_function = len,
         separators= ["\n\n", "\n", ".", " "]
     ))
 
     return docs
 
-def get_vectorstore(docs, api_key):
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", task_type="retrieval_query", google_api_key=api_key)
+def get_vectorstore(docs):
+    # embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", task_type="retrieval_query", google_api_key=st.secrets["GOOGLE_API_KEY"])
+    embeddings = AzureOpenAIEmbeddings(deployment = "text-embedding-ada-002", 
+        openai_api_key = st.secrets["AZURE_OPENAI_API_KEY"], 
+        openai_api_version = "2023-05-15", 
+        openai_api_type = st.secrets["OPENAI_API_TYPE"], 
+        azure_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
+    )
     vectorstore = FAISS.from_documents(documents=docs, embedding=embeddings)
 
     return vectorstore
 
 def get_conversation_chain(vectorstore):
 
-    llm = GoogleGenerativeAI(model=st.session_state.gemini_pro_model, google_api_key=api_key, temperature=0.5)
-    conversation_chain = RetrievalQAWithSourcesChain.from_chain_type(
+    # llm = GoogleGenerativeAI(model=st.session_state.gemini_pro_model, google_api_key=api_key, temperature=0.5)
+    # llm = AzureChatOpenAI(deployment_name = "my-dna-gpt35turbo", 
+    #     openai_api_key = st.secrets["AZURE_OPENAI_API_KEY"], 
+    #     openai_api_version = "2023-05-15", 
+    #     openai_api_type = st.secrets["OPENAI_API_TYPE"], 
+    #     azure_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
+    # )
+    llm = AzureOpenAI(deployment_name = "my-dna-gpt35turbo", 
+        # model_name = "gpt-3.5-turbo"
+        openai_api_key = st.secrets["AZURE_OPENAI_API_KEY"], 
+        openai_api_version = "2023-05-15", 
+        openai_api_type = st.secrets["OPENAI_API_TYPE"], 
+        azure_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
+    )
+    conversation_chain = RetrievalQAWithSourcesChain.from_llm( # from_chain_type
         llm=llm, 
         retriever=vectorstore.as_retriever()
     )
@@ -84,10 +105,15 @@ def reset_session_state():
     initialize_session_state()
 
 # ------------------------------------------------------ GLOBAL VARIABLES ------------------------------------------------------ #
+
 # Load the environment variables
 load_dotenv()
 # api_key = os.getenv("GOOGLE_API_KEY")
-api_key = st.secrets["GOOGLE_API_KEY"]
+# google_key = st.secrets["GOOGLE_API_KEY"]
+# azure_key = st.secrets["AZURE_OPENAI_API_KEY"]
+# azure_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
+# azure_type = st.secrets["OPENAI_API_TYPE"]
+
 
 # Set the tab's title, icon and CSS style
 page_icon = ":newspaper:"  # https://www.webfx.com/tools/emoji-cheat-sheet/
@@ -130,7 +156,7 @@ def main():
 
                 with st.spinner(text="Building Embedding Vector...✅✅✅"):
                     # Create Vector Store
-                    vectorstore = get_vectorstore(docs, api_key)
+                    vectorstore = get_vectorstore(docs)
                     st.session_state.is_vectorstore = True
 
                 with st.spinner(text="Building Conversation Chain...✅✅✅"):
