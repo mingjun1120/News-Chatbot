@@ -1,270 +1,182 @@
+import sys
+import os
+import time
+from dotenv import load_dotenv
+
 # Streamlit Imports
 import streamlit as st
 from streamlit.web import cli as stcli
-from streamlit_extras.colored_header import colored_header
 from streamlit_extras.add_vertical_space import add_vertical_space
 
-# Langchain Imports
+# LangChain Imports
 from langchain_community.document_loaders import UnstructuredURLLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAI, GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain_openai import AzureChatOpenAI, AzureOpenAI, AzureOpenAIEmbeddings
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain.chains.conversational_retrieval.prompts import (CONDENSE_QUESTION_PROMPT, QA_PROMPT)
-from langchain.chains import ConversationalRetrievalChain, RetrievalQAWithSourcesChain
-from langchain.prompts import PromptTemplate
-from langchain.memory import ConversationBufferMemory
-from langchain.schema import (SystemMessage, HumanMessage, AIMessage)
+from langchain.chains import RetrievalQAWithSourcesChain
 
-# Import env variables
-from dotenv import load_dotenv
+# ------------------------------------------------------ PAGE CONFIG ------------------------------------------------------ #
+load_dotenv()
 
-# Import system
-import sys
-import os
-
-# Import other modules
-import pickle
-import random
-import time
+st.set_page_config(page_title="News Chatbot", page_icon="📰", layout="centered")
+st.header("News ChatBot 📰")
 
 # ------------------------------------------------------ FUNCTIONS ------------------------------------------------------ #
 def get_document_text_chunks(loader):
-
-    # Get the text chunks of the PDF file, accumulate to the text_chunks list variable becaus load_and_split() returns a list of Document
-    docs = loader.load_and_split(text_splitter=RecursiveCharacterTextSplitter(
-        chunk_size = 750,
-        chunk_overlap = 80,
-        length_function = len,
-        separators= ["\n\n", "\n", ".", " "]
-    ))
-
-    return docs
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=750,
+        chunk_overlap=80,
+        length_function=len,
+        separators=["\n\n", "\n", ".", " "]
+    )
+    return loader.load_and_split(text_splitter=text_splitter)
 
 def get_vectorstore(docs):
-    # embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", task_type="retrieval_query", google_api_key=st.secrets["GOOGLE_API_KEY"])
-    embeddings = AzureOpenAIEmbeddings(deployment = "text-embedding-ada-002", 
-        openai_api_key = st.secrets["AZURE_OPENAI_API_KEY"], 
-        openai_api_version = "2023-05-15", 
-        openai_api_type = st.secrets["OPENAI_API_TYPE"], 
-        azure_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
+    embeddings = AzureOpenAIEmbeddings(
+        azure_deployment="text-embedding-ada-002",
+        api_key=st.secrets["AZURE_OPENAI_API_KEY"],
+        api_version="2023-05-15",
+        azure_endpoint=st.secrets["AZURE_OPENAI_ENDPOINT"]
     )
-    vectorstore = FAISS.from_documents(documents=docs, embedding=embeddings)
-
-    return vectorstore
+    return FAISS.from_documents(documents=docs, embedding=embeddings)
 
 def get_conversation_chain(vectorstore):
-
-    # llm = GoogleGenerativeAI(model=st.session_state.gemini_pro_model, google_api_key=api_key, temperature=0.5)
-    # llm = AzureChatOpenAI(deployment_name = "my-dna-gpt35turbo", 
-    #     openai_api_key = st.secrets["AZURE_OPENAI_API_KEY"], 
-    #     openai_api_version = "2023-05-15", 
-    #     openai_api_type = st.secrets["OPENAI_API_TYPE"], 
-    #     azure_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
-    # )
-    llm = AzureOpenAI(deployment_name = "my-dna-gpt35turbo", 
-        # model_name = "gpt-3.5-turbo"
-        openai_api_key = st.secrets["AZURE_OPENAI_API_KEY"], 
-        openai_api_version = "2023-05-15", 
-        openai_api_type = st.secrets["OPENAI_API_TYPE"], 
-        azure_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
+    # Use AzureChatOpenAI for gpt-3.5-turbo chat models
+    llm = AzureChatOpenAI(
+        azure_deployment="my-dna-gpt35turbo",
+        api_key=st.secrets["AZURE_OPENAI_API_KEY"],
+        api_version="2023-05-15",
+        azure_endpoint=st.secrets["AZURE_OPENAI_ENDPOINT"],
+        temperature=0.3
     )
-    conversation_chain = RetrievalQAWithSourcesChain.from_llm( # from_chain_type
-        llm=llm, 
+    return RetrievalQAWithSourcesChain.from_llm(
+        llm=llm,
         retriever=vectorstore.as_retriever()
     )
-    return conversation_chain
 
 def initialize_session_state():
-    # Set a default model
-    if "gemini_pro_model" not in st.session_state:
-        st.session_state["gemini_pro_model"] = "gemini-pro"
-    # Initialize chat history
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "conversation_chain" not in st.session_state:
-        st.session_state.conversation_chain = None
-    if "urls" not in st.session_state:
-        st.session_state.urls = None
-    if "is_processed" not in st.session_state:
-        st.session_state.is_processed = None
-    if "is_vectorstore" not in st.session_state:
-        st.session_state.is_vectorstore = False
+    defaults = {
+        "gemini_pro_model": "gemini-pro",
+        "messages": [],
+        "conversation_chain": None,
+        "urls": [],
+        "is_processed": False,
+        "URL_1": "",
+        "URL_2": "",
+        "URL_3": "",
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 def reset_session_state():
-    # Use to clear the inputs in st.text_input for URL 1, URL 2, URL 3 when the user clicks the "Reset All" button
-    st.session_state.URL_4, st.session_state.URL_5, st.session_state.URL_6 = st.session_state.URL_1, st.session_state.URL_2, st.session_state.URL_3
-    st.session_state.URL_1, st.session_state.URL_2, st.session_state.URL_3 = '', '', ''
+    # Clear URL text inputs safely
+    st.session_state.URL_1 = ""
+    st.session_state.URL_2 = ""
+    st.session_state.URL_3 = ""
     
-    # Delete all the keys in session state
-    for key in st.session_state.keys():
-        del st.session_state[key]
-    
-    # Initialize the default session state variables again
-    initialize_session_state()
+    # Reset app state variables
+    st.session_state.messages = []
+    st.session_state.conversation_chain = None
+    st.session_state.urls = []
+    st.session_state.is_processed = False
 
-# ------------------------------------------------------ GLOBAL VARIABLES ------------------------------------------------------ #
-
-# Load the environment variables
-load_dotenv()
-# api_key = os.getenv("GOOGLE_API_KEY")
-# google_key = st.secrets["GOOGLE_API_KEY"]
-# azure_key = st.secrets["AZURE_OPENAI_API_KEY"]
-# azure_endpoint = st.secrets["AZURE_OPENAI_ENDPOINT"]
-# azure_type = st.secrets["OPENAI_API_TYPE"]
-
-
-# Set the tab's title, icon and CSS style
-page_icon = ":newspaper:"  # https://www.webfx.com/tools/emoji-cheat-sheet/
-st.set_page_config(page_title="News Chatbot", page_icon=page_icon, layout="centered")
-
-# Page header
-st.header(body=f"News ChatBot 📰")
-
+# ------------------------------------------------------ MAIN APP ------------------------------------------------------ #
 def main():
-
-    # Initialize the session state variables
     initialize_session_state()
 
     # ------------------------------------------------------ SIDEBAR ------------------------------------------------------ #
-    # Sidebar contents
     with st.sidebar:
-
         st.subheader("News Article URLs")
 
-        # Paste News URLs
         urls = []
         for i in range(3):
-            url = st.text_input(f"URL {i+1}", key=f"URL_{i+1}", placeholder="Paste News URL here...")
-            urls.append(url)
-        urls = list(filter(None, urls)) # Remove None in the list
+            url = st.text_input(
+                f"URL {i+1}",
+                key=f"URL_{i+1}",
+                placeholder="Paste News URL here..."
+            )
+            if url.strip():
+                urls.append(url.strip())
 
-        # Process URLs
         process_button = st.button(label="Process URLs")
 
         if process_button:
-            if urls != []:
-                # st.session_state.clear() # Clear the session state variables
-                with st.spinner(text="Data Loading...✅✅✅"):
-                    # Load data
-                    loader = UnstructuredURLLoader(urls=urls)
-                
-                with st.spinner(text="Text Splitting...✅✅✅"):
-                    # Get the text chunks from the PDFs
-                    docs = get_document_text_chunks(loader)
+            if not urls:
+                st.warning("Please enter at least one valid URL.")
+            else:
+                try:
+                    with st.spinner("Data Loading... ✅"):
+                        loader = UnstructuredURLLoader(urls=urls)
+                        docs = get_document_text_chunks(loader)
 
-                with st.spinner(text="Building Embedding Vector...✅✅✅"):
-                    # Create Vector Store
-                    vectorstore = get_vectorstore(docs)
-                    st.session_state.is_vectorstore = True
+                    if not docs:
+                        st.error("Could not extract any text from the provided URLs.")
+                    else:
+                        with st.spinner("Building Embedding Vector... ✅"):
+                            vectorstore = get_vectorstore(docs)
 
-                with st.spinner(text="Building Conversation Chain...✅✅✅"):
-                    # Create conversation chain
-                    st.session_state.conversation_chain = get_conversation_chain(vectorstore)
-                
-                # Print System Message at the end
-                st.success(body=f"Done processing!", icon="✅")
+                        with st.spinner("Building Conversation Chain... ✅"):
+                            st.session_state.conversation_chain = get_conversation_chain(vectorstore)
 
-            # Use to check if URLs are processed. If not processed, users will be asked to upload PDFs when ask questions.
-            st.session_state.is_processed = process_button
-
-        if urls != []:
-            st.session_state.urls = urls
-        else:
-            st.session_state.urls = None
-            st.session_state.is_vectorstore = False
+                        # Persist processed state across reruns
+                        st.session_state.urls = urls
+                        st.session_state.is_processed = True
+                        st.success("Done processing!", icon="✅")
+                except Exception as e:
+                    st.error(f"Error processing URLs: {e}")
 
         add_vertical_space(num_lines=1)
 
-        # Web App References
-        st.markdown('''
+        st.markdown("""
         ### About
         This app is an LLM-powered chatbot built using:
         - [Streamlit](https://streamlit.io/)
         - [LangChain](https://python.langchain.com/)
-        - [Gemini Pro](https://ai.google.dev/)
-        ''')
+        - [Azure OpenAI](https://azure.microsoft.com/en-us/products/ai-services/openai-service)
+        """)
         st.write("Made ❤️ by Lim Ming Jun")
 
-        # Reset button part
-        reset = st.button('Reset All', on_click=reset_session_state)
-        if reset:
-            # for key in st.session_state.keys():
-            #     del st.session_state[key]
-            # initialize_session_state()
-            st.rerun()
-    
-    # ------------------------------------------------------ MAIN LAYOUT------------------------------------------------------ #
-    # Display chat messages from history on app rerun
+        # on_click handles state reset; no st.rerun() needed
+        st.button("Reset All", on_click=reset_session_state)
+
+    # ------------------------------------------------------ MAIN LAYOUT ------------------------------------------------------ #
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
-    
-    # Accept user input
+
     if prompt := st.chat_input("Enter your query:"):
-        # Display user message in chat message container
+        if not prompt.strip():
+            return
+
         with st.chat_message("user"):
             st.markdown(prompt)
-        # Add user message to chat history
         st.session_state.messages.append({"role": "user", "content": prompt})
 
-        # Display assistant response in chat message container
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
             full_response = ""
-            error_message = "Sorry, please input your news URL and click the Process button before querying!"
 
-            if prompt != None and prompt.isspace() == False:
-                if st.session_state.urls != None and st.session_state.is_processed != None and st.session_state.is_vectorstore == True:
-                    # result will be a dictionary of this format --> {"answer": "", "sources": ""}
-                    result = st.session_state.conversation_chain({"question": prompt}, return_only_outputs=True)
-                    assistant_response = result.get("answer") + '\n\n**Sources:** ' + result.get('sources')
-
-                    # Simulate stream of response with milliseconds delay
-                    for chunk in assistant_response.split():
-                        if chunk == "**Sources**:":
-                            full_response = full_response + '\n\n' + chunk + " "
-                        else:
-                            full_response += chunk + " "
-                        
-                        time.sleep(0.05)
-                        # Add a blinking cursor to simulate typing
-                        message_placeholder.markdown(full_response + "▌")
-                    message_placeholder.markdown(full_response)
-                else:
-                    assistant_response = error_message
-                    # Simulate stream of response with milliseconds delay
-                    for chunk in assistant_response.split():
-                        full_response += chunk + " "
-                        time.sleep(0.05)
-                        # Add a blinking cursor to simulate typing
-                        message_placeholder.markdown(full_response + "▌")
-                    message_placeholder.markdown(full_response)
-            
-                # # Add assistant response to chat history
-                # st.session_state.messages.append({"role": "assistant", "content": full_response})
-            else:
-                if prompt.isspace():
-                    prompt = None
+            if st.session_state.is_processed and st.session_state.conversation_chain is not None:
+                with st.spinner("Thinking..."):
+                    result = st.session_state.conversation_chain.invoke({"question": prompt})
                 
-                if st.session_state.messages != [] and st.session_state.messages[-1]["content"] == error_message and prompt == None:
-                    # Simulate stream of response with milliseconds delay
-                    for chunk in error_message.split():
-                        full_response += chunk + " "
-                        time.sleep(0.05)
-                        # Add a blinking cursor to simulate typing
-                        message_placeholder.markdown(full_response + "▌")
-                    message_placeholder.markdown(full_response)
+                answer = result.get("answer", "No answer generated.").strip()
+                sources = result.get("sources", "").strip()
+                assistant_response = f"{answer}\n\n**Sources:** {sources}" if sources else answer
+            else:
+                assistant_response = "Sorry, please input your news URL and click the **Process URLs** button before querying!"
 
-            # Add assistant response to chat history
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            
-            # Clear the user input after the user hits enter
-            prompt = None
+            # Stream response while preserving newlines
+            for word in assistant_response.split(" "):
+                full_response += word + " "
+                time.sleep(0.03)
+                message_placeholder.markdown(full_response + "▌")
+            message_placeholder.markdown(full_response.strip())
 
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
+        st.session_state.messages.append({"role": "assistant", "content": full_response.strip()})
+
+if __name__ == "__main__":
     if st.runtime.exists():
         main()
     else:
